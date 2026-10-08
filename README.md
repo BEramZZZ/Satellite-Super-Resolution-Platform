@@ -1,5 +1,8 @@
 # Satellite Super-Resolution Platform
 
+_Developed as part of a research internship at ASAL — Agence Spatiale Algérienne (the Algerian
+Space Agency)._
+
 An interactive web platform for exploring **4x super-resolution of satellite and aerial imagery**,
 comparing a GAN-based model (**Real-ESRGAN**) against a diffusion-based model
 (**Stable Diffusion x4 Upscaler**) in both zero-shot form and several fine-tuned variants.
@@ -9,7 +12,7 @@ the original with quantitative metrics. A separate benchmark section presents th
 research results scene by scene.
 
 > **Research repository:** methodology, training code, benchmark numbers and the full report
-> live in [link to research repo]. This repository is the deployed application built on top of them.
+> live in [\[link to research repo\]](https://github.com/BEramZZZ/Diffusion-Based-Super-Resolution-of-Low-Cost-Satellite-Imagery). This repository is the deployed application built on top of them.
 
 <!-- Optional: add a live demo link and badges here -->
 <!-- **Live demo:** https://your-demo-url -->
@@ -370,13 +373,9 @@ Methodology and benchmark numbers: [link to research repo]
 
 ---
 
-## Author
-
-BELAIDI Ramzy Zakaria — Master's student, USTHB (AI / Bioinformatics / CS)
-
 ## License
 
 <!-- TODO: add a license (for example MIT) and note that the base models keep their own licenses. -->
 
-This project's code is released under the MIT license. The base models
+This project's code is released under the **[LICENSE NAME]** license. The base models
 (Real-ESRGAN and Stable Diffusion x4 Upscaler) are subject to their own licenses.
