@@ -65,7 +65,7 @@ except ImportError:
 
 app = FastAPI(
     title="Satellite Super-Resolution Backend",
-    version="0.3.0",
+    version="0.3.1",
     description=(
         "FastAPI backend for the Satellite Super-Resolution "
         "research/demo website."
@@ -136,7 +136,7 @@ def root():
     return {
         "service": "satellite-super-resolution-backend",
         "status": "ok",
-        "version": "0.3.0",
+        "version": "0.3.1",
     }
 
 
@@ -145,7 +145,7 @@ def health():
     return {
         "status": "ok",
         "service": "satellite-super-resolution-backend",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "device": (
             "cuda"
             if torch.cuda.is_available()
@@ -320,6 +320,194 @@ def _validate_dimensions(
         )
 
 
+def _read_reference_image(
+    reference_file: UploadFile,
+    lr_width: int,
+    lr_height: int,
+) -> Image.Image:
+    """
+    Read the optional HR reference and make sure it matches 4x scaling.
+    """
+
+    _validate_upload_metadata(
+        reference_file
+    )
+
+    reference_image = _read_uploaded_image(
+        reference_file
+    )
+
+    expected_reference_size = (
+        lr_width * 4,
+        lr_height * 4,
+    )
+
+    if reference_image.size != expected_reference_size:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "HR reference dimensions must match 4x scaling. "
+                f"Expected "
+                f"{expected_reference_size[0]}x"
+                f"{expected_reference_size[1]}, "
+                f"got "
+                f"{reference_image.size[0]}x"
+                f"{reference_image.size[1]}."
+            ),
+        )
+
+    return reference_image
+
+
+# =============================================================================
+# SHARED METRICS HELPER
+# =============================================================================
+
+def _compute_metrics(
+    sr_image: Image.Image,
+    reference_image: Optional[Image.Image],
+) -> dict:
+    """
+    Compute PSNR / SSIM / LPIPS between the SR output and the HR reference.
+
+    Never raises: a metric failure must not destroy a valid SR result.
+    """
+
+    result = {
+        "available": False,
+        "PSNR": None,
+        "SSIM": None,
+        "LPIPS": None,
+        "error": None,
+    }
+
+    if reference_image is None:
+
+        return result
+
+    if try_image_metrics is None:
+
+        result["error"] = (
+            "metrics.py could not be imported."
+        )
+
+        return result
+
+    try:
+
+        metric_result = try_image_metrics(
+            sr_image,
+            reference_image,
+        )
+
+        # try_image_metrics returns (metrics_dict, error_message).
+        # Also tolerate a bare metrics dict.
+
+        if isinstance(
+            metric_result,
+            tuple,
+        ):
+
+            metrics_dict = metric_result[0]
+
+            if (
+                len(metric_result) > 1
+                and metric_result[1] is not None
+            ):
+
+                result["error"] = str(
+                    metric_result[1]
+                )
+
+        else:
+
+            metrics_dict = metric_result
+
+        if isinstance(
+            metrics_dict,
+            dict,
+        ):
+
+            result["PSNR"] = metrics_dict.get(
+                "PSNR",
+                metrics_dict.get("psnr"),
+            )
+
+            result["SSIM"] = metrics_dict.get(
+                "SSIM",
+                metrics_dict.get("ssim"),
+            )
+
+            result["LPIPS"] = metrics_dict.get(
+                "LPIPS",
+                metrics_dict.get("lpips"),
+            )
+
+            result["available"] = any(
+                result[key] is not None
+                for key in (
+                    "PSNR",
+                    "SSIM",
+                    "LPIPS",
+                )
+            )
+
+    except Exception as exc:
+
+        result["available"] = False
+        result["error"] = str(exc)
+
+    return result
+
+
+def _apply_metric_headers(
+    response: StreamingResponse,
+    metrics: dict,
+) -> None:
+    """
+    Write the metric result into the X-SR-* response headers.
+    """
+
+    response.headers[
+        "X-SR-Metrics-Available"
+    ] = (
+        "true"
+        if metrics["available"]
+        else "false"
+    )
+
+    if metrics["PSNR"] is not None:
+
+        response.headers[
+            "X-SR-PSNR"
+        ] = str(
+            float(metrics["PSNR"])
+        )
+
+    if metrics["SSIM"] is not None:
+
+        response.headers[
+            "X-SR-SSIM"
+        ] = str(
+            float(metrics["SSIM"])
+        )
+
+    if metrics["LPIPS"] is not None:
+
+        response.headers[
+            "X-SR-LPIPS"
+        ] = str(
+            float(metrics["LPIPS"])
+        )
+
+    if metrics["error"]:
+
+        response.headers[
+            "X-SR-Metrics-Error"
+        ] = str(metrics["error"])[:1000]
+
+
 # =============================================================================
 # ESRGAN STRATEGY NORMALIZATION
 # =============================================================================
@@ -476,33 +664,11 @@ def esrgan_inference(
 
     if reference_file is not None:
 
-        _validate_upload_metadata(
-            reference_file
+        reference_image = _read_reference_image(
+            reference_file,
+            lr_width,
+            lr_height,
         )
-
-        reference_image = _read_uploaded_image(
-            reference_file
-        )
-
-        expected_reference_size = (
-            lr_width * 4,
-            lr_height * 4,
-        )
-
-        if reference_image.size != expected_reference_size:
-
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "HR reference dimensions must match 4x scaling. "
-                    f"Expected "
-                    f"{expected_reference_size[0]}x"
-                    f"{expected_reference_size[1]}, "
-                    f"got "
-                    f"{reference_image.size[0]}x"
-                    f"{reference_image.size[1]}."
-                ),
-            )
 
     # -------------------------------------------------------------------------
     # Actual ESRGAN inference
@@ -533,20 +699,6 @@ def esrgan_inference(
             detail=str(exc),
         ) from exc
 
-    except RuntimeError as exc:
-
-        if torch.cuda.is_available():
-
-            try:
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"ESRGAN runtime error: {exc}",
-        ) from exc
-
     except torch.cuda.OutOfMemoryError as exc:
 
         if torch.cuda.is_available():
@@ -562,6 +714,20 @@ def esrgan_inference(
                 "CUDA out of memory during ESRGAN inference. "
                 "Try a smaller LR image."
             ),
+        ) from exc
+
+    except RuntimeError as exc:
+
+        if torch.cuda.is_available():
+
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"ESRGAN runtime error: {exc}",
         ) from exc
 
     except Exception as exc:
@@ -611,94 +777,10 @@ def esrgan_inference(
     # Metrics
     # -------------------------------------------------------------------------
 
-    metrics_available = False
-
-    psnr_value = None
-    ssim_value = None
-    lpips_value = None
-    metrics_error = None
-
-    if reference_image is not None:
-
-        if try_image_metrics is None:
-
-            metrics_error = (
-                "metrics.py could not be imported."
-            )
-
-        else:
-
-            try:
-
-                metric_result = try_image_metrics(
-                    sr_image,
-                    reference_image,
-                )
-
-                # Support:
-                #   (metrics_dict, error)
-                # or:
-                #   metrics_dict
-
-                if isinstance(
-                    metric_result,
-                    tuple,
-                ):
-
-                    metrics_dict = (
-                        metric_result[0]
-                    )
-
-                    if len(metric_result) > 1:
-
-                        metrics_error = (
-                            metric_result[1]
-                        )
-
-                else:
-
-                    metrics_dict = metric_result
-
-                if isinstance(
-                    metrics_dict,
-                    dict,
-                ):
-
-                    psnr_value = metrics_dict.get(
-                        "PSNR",
-                        metrics_dict.get("psnr"),
-                    )
-
-                    ssim_value = metrics_dict.get(
-                        "SSIM",
-                        metrics_dict.get("ssim"),
-                    )
-
-                    lpips_value = metrics_dict.get(
-                        "LPIPS",
-                        metrics_dict.get("lpips"),
-                    )
-
-                    metrics_available = any(
-                        value is not None
-                        for value in (
-                            psnr_value,
-                            ssim_value,
-                            lpips_value,
-                        )
-                    )
-
-                if metrics_error is not None:
-
-                    metrics_error = str(
-                        metrics_error
-                    )
-
-            except Exception as exc:
-
-                # Do not destroy a valid SR result just because metrics failed.
-                metrics_available = False
-                metrics_error = str(exc)
+    metrics = _compute_metrics(
+        sr_image,
+        reference_image,
+    )
 
     # -------------------------------------------------------------------------
     # Serialize
@@ -744,43 +826,10 @@ def esrgan_inference(
         else "cpu"
     )
 
-    response.headers[
-        "X-SR-Metrics-Available"
-    ] = (
-        "true"
-        if metrics_available
-        else "false"
+    _apply_metric_headers(
+        response,
+        metrics,
     )
-
-    if psnr_value is not None:
-
-        response.headers[
-            "X-SR-PSNR"
-        ] = str(
-            float(psnr_value)
-        )
-
-    if ssim_value is not None:
-
-        response.headers[
-            "X-SR-SSIM"
-        ] = str(
-            float(ssim_value)
-        )
-
-    if lpips_value is not None:
-
-        response.headers[
-            "X-SR-LPIPS"
-        ] = str(
-            float(lpips_value)
-        )
-
-    if metrics_error:
-
-        response.headers[
-            "X-SR-Metrics-Error"
-        ] = metrics_error[:1000]
 
     return response
 
@@ -793,11 +842,15 @@ def esrgan_inference(
 def diffusion_inference(
     file: UploadFile = File(...),
     strategy: str = Form("zero_shot"),
+    reference_file: Optional[UploadFile] = File(None),
 ):
     """
     Stable Diffusion x4 Upscaler.
 
     The exact sampling configuration lives in diffusion.py.
+
+    Optional:
+        reference_file -> HR reference for PSNR / SSIM / LPIPS
     """
 
     strategy = strategy.strip().lower()
@@ -816,6 +869,20 @@ def diffusion_inference(
     )
 
     lr_width, lr_height = lr_image.size
+
+    # -------------------------------------------------------------------------
+    # Optional HR reference
+    # -------------------------------------------------------------------------
+
+    reference_image: Optional[Image.Image] = None
+
+    if reference_file is not None:
+
+        reference_image = _read_reference_image(
+            reference_file,
+            lr_width,
+            lr_height,
+        )
 
     # -------------------------------------------------------------------------
     # Strategy
@@ -880,13 +947,6 @@ def diffusion_inference(
             detail=str(exc),
         ) from exc
 
-    except RuntimeError as exc:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Diffusion runtime error: {exc}",
-        ) from exc
-
     except torch.cuda.OutOfMemoryError as exc:
 
         if torch.cuda.is_available():
@@ -904,6 +964,13 @@ def diffusion_inference(
             ),
         ) from exc
 
+    except RuntimeError as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Diffusion runtime error: {exc}",
+        ) from exc
+
     except Exception as exc:
 
         raise HTTPException(
@@ -916,6 +983,8 @@ def diffusion_inference(
     # -------------------------------------------------------------------------
     # Verify output
     # -------------------------------------------------------------------------
+
+    sr_image = sr_image.convert("RGB")
 
     expected_size = (
         lr_width * 4,
@@ -934,6 +1003,15 @@ def diffusion_inference(
                 f"{sr_image.size[0]}x{sr_image.size[1]}."
             ),
         )
+
+    # -------------------------------------------------------------------------
+    # Metrics
+    # -------------------------------------------------------------------------
+
+    metrics = _compute_metrics(
+        sr_image,
+        reference_image,
+    )
 
     # -------------------------------------------------------------------------
     # Serialize
@@ -998,5 +1076,10 @@ def diffusion_inference(
     response.headers[
         "X-SR-Diffusion-Eta"
     ] = "0.0"
+
+    _apply_metric_headers(
+        response,
+        metrics,
+    )
 
     return response

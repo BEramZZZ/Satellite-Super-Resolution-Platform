@@ -6,6 +6,8 @@ import numpy as np
 import torch
 import lpips
 
+from PIL import Image
+
 from skimage.metrics import (
     peak_signal_noise_ratio,
     structural_similarity,
@@ -60,7 +62,7 @@ def get_lpips():
 # ============================================================
 
 def _prepare_image(
-    image: np.ndarray,
+    image,
     name: str,
 ) -> np.ndarray:
     """
@@ -69,12 +71,25 @@ def _prepare_image(
         H x W x 3
         float32
         range [0, 1]
+
+    Accepts either a PIL image (what main.py passes) or a
+    numpy array.
     """
+
+    # --------------------------------------------------------
+    # PIL -> numpy (RGB)
+    # --------------------------------------------------------
+
+    if isinstance(image, Image.Image):
+
+        image = np.asarray(
+            image.convert("RGB")
+        )
 
     if not isinstance(image, np.ndarray):
 
         raise TypeError(
-            f"{name} must be a numpy.ndarray."
+            f"{name} must be a numpy.ndarray or PIL.Image."
         )
 
     # --------------------------------------------------------
@@ -154,8 +169,8 @@ def _prepare_image(
 
 @torch.no_grad()
 def image_metrics(
-    pred: np.ndarray,
-    target: np.ndarray,
+    pred,
+    target,
 ) -> Dict[str, float]:
     """
     Compute:
@@ -164,11 +179,9 @@ def image_metrics(
         SSIM
         LPIPS
 
-    Expected input:
+    Accepted input:
 
-        H x W x 3
-        RGB
-        [0,1]
+        PIL image or numpy array, RGB
     """
 
     pred = _prepare_image(
@@ -302,8 +315,8 @@ def image_metrics(
 # ============================================================
 
 def try_image_metrics(
-    pred: np.ndarray,
-    target: np.ndarray,
+    pred,
+    target,
 ) -> Tuple[
     Optional[Dict[str, float]],
     Optional[str],
