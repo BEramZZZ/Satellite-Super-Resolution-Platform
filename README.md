@@ -56,9 +56,6 @@ research results scene by scene.
 
 ## Screenshots
 
-Replace each placeholder image with a real screenshot. Suggested file names are listed so
-the paths in this README keep working.
-
 ### Lab
 
 |                                                                        |                                                                                            |
@@ -71,39 +68,19 @@ the paths in this README keep working.
 | ![Lab: processing state](docs/screenshots/03-lab-processing.png)       | ![Lab: result view](docs/screenshots/04-lab-result.png)        |
 | **Processing state** — loading/progress indicator while the model runs | **Result view** — input and super-resolved output side by side |
 
-|                                                                    |                                                            |
-| ------------------------------------------------------------------ | ---------------------------------------------------------- |
-| ![Lab: zoom and compare](docs/screenshots/05-lab-zoom-compare.png) | ![Lab: metrics panel](docs/screenshots/06-lab-metrics.png) |
-| **Zoom / compare** — inspecting fine detail at pixel level         | **Metrics panel** — PSNR, SSIM, LPIPS for the run          |
-
-![Lab: diffusion gate](docs/screenshots/07-lab-diffusion-warning.png)
-
-<!-- SCREENSHOT: the labeled/gated warning shown when the user selects the diffusion model -->
-
-**Diffusion warning / gate** — diffusion output is labeled as a generative candidate.
-
 ### Benchmark
 
-|                                                                              |                                                                                          |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| ![Benchmark: summary table](docs/screenshots/08-benchmark-summary-table.png) | ![Benchmark: strategy comparison](docs/screenshots/09-benchmark-strategy-comparison.png) |
-| **Summary table** — PSNR/SSIM per model and strategy                         | **Strategy comparison** — the same scene across every strategy                           |
+|                                                                              |                                                                                  |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| ![Benchmark: summary table](docs/screenshots/08-benchmark-summary-table.png) | ![Benchmark: per-scene gallery](docs/screenshots/10-benchmark-scene-gallery.png) |
+| **Summary table** — PSNR/SSIM per model and strategy                         | **Per-scene gallery** — the 10 held-out scenes                                   |
 
-|                                                                                  |                                                                                               |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| ![Benchmark: per-scene gallery](docs/screenshots/10-benchmark-scene-gallery.png) | ![Benchmark: hallucination close-up](docs/screenshots/11-benchmark-hallucination-closeup.png) |
-| **Per-scene gallery** — the 10 held-out scenes                                   | **Hallucination close-up** — zoomed crop of invented detail                                   |
+### Concept and Report
 
-### Layout and responsiveness
-
-|                                                               |                                                             |
-| ------------------------------------------------------------- | ----------------------------------------------------------- |
-| ![Navigation shell](docs/screenshots/12-shell-navigation.png) | ![Mobile view](docs/screenshots/13-mobile.png)              |
-| **Navigation shell** — shared header/sidebar across pages     | **Mobile view** — responsive layout on a phone-sized screen |
-
-<!-- Optional extras worth capturing: dark mode, error state (backend offline), empty state, a short GIF of a full upload-to-result run -->
-
----
+|                                                                             |                                                                  |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| ![Concept tab](docs/screenshots/14-concept.png)                             | ![Report tab](docs/screenshots/15-report.png)                    |
+| **Concept tab** — overview and explanation of the super-resolution approach | **Report tab** — project results, analysis, and generated report |
 
 ## Why two models
 

@@ -9,3 +9,4 @@ out
 __pycache__/
 checkpoints/
 models/
+backend/generate_benchmark_json.py
