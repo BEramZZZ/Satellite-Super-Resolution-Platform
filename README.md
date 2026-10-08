@@ -32,11 +32,10 @@ research results scene by scene.
 8. [Configuration](#configuration)
 9. [Checkpoints](#checkpoints)
 10. [API reference](#api-reference)
-11. [Limitations and honest caveats](#limitations-and-honest-caveats)
+11. [Limitations and future work](#limitations-and-future-work)
 12. [Relationship to the research repo](#relationship-to-the-research-repo)
-13. [Roadmap](#roadmap)
-14. [References](#references)
-15. [License](#license)
+13. [References](#references)
+14. [License](#license)
 
 ---
 
@@ -115,8 +114,6 @@ Fine-tuning strategies exposed in the interface:
 | Real-ESRGAN | yes       | yes       | yes          | yes     | yes               |
 | Diffusion   | yes       | yes       | not deployed | yes     | yes (see caveats) |
 
-<!-- TODO: edit this table to match exactly what model_registry.py exposes. -->
-
 Fine-tuning was done on a small, synthetically degraded NAIP aerial-imagery set. Full numbers,
 training details and the evaluation protocol are in the research repo.
 
@@ -183,6 +180,10 @@ satellite-sr-platform/
 
 ## Getting started
 
+Do the backend before the frontend — the frontend is only a client for the backend's API, so
+it has nothing to show until the backend is answering requests. Once the backend is running
+(step 2 ends with a way to check this), move on to step 3.
+
 ### Prerequisites
 
 - Python 3.10 or newer
@@ -207,15 +208,25 @@ pip install -r requirements.txt
 cp .env.example .env            # Windows: copy .env.example .env
 ```
 
-Add the model checkpoints (see [Checkpoints](#checkpoints)), then start the server:
+The backend will start without any checkpoints present — it serves the base (zero-shot) models
+directly, since those are downloaded automatically on first use. Add fine-tuned checkpoints
+(see [Checkpoints](#checkpoints)) for the other strategies to become available in the interface.
+Then start the server:
 
 ```
 uvicorn main:app --reload --port 8000
 ```
 
-<!-- TODO: confirm this matches how you actually start the backend. -->
+The API is now at `http://127.0.0.1:8000`. Confirm it's actually responding before moving on —
+this is what catches a bad `.env` value or a missing dependency now, instead of leaving you to
+debug a blank page in the browser later:
 
-The API is now at `http://127.0.0.1:8000`.
+```
+curl http://127.0.0.1:8000/health
+```
+
+or open `http://127.0.0.1:8000/docs`, FastAPI's interactive Swagger UI listing every route the
+backend exposes.
 
 ### 3. Frontend
 
@@ -234,12 +245,17 @@ Open `http://localhost:3000`.
 
 ## Configuration
 
-| Variable                       | Where                 | Purpose                 | Default                 |
-| ------------------------------ | --------------------- | ----------------------- | ----------------------- |
-| `NEXT_PUBLIC_API_URL`          | `frontend/.env.local` | Base URL of the backend | `http://127.0.0.1:8000` |
-| _(see `backend/.env.example`)_ | `backend/.env`        | Backend settings        | —                       |
+| Variable              | Where                 | Purpose                                                                         | Default                         |
+| --------------------- | --------------------- | ------------------------------------------------------------------------------- | ------------------------------- |
+| `NEXT_PUBLIC_API_URL` | `frontend/.env.local` | Base URL of the backend                                                         | `http://127.0.0.1:8000`         |
+| `CHECKPOINTS_DIR`     | `backend/.env`        | Path `model_registry.py` loads fine-tuned weights from                          | `./checkpoints`                 |
+| `DEVICE`              | `backend/.env`        | `cuda` or `cpu` — which device models are loaded onto                           | `cuda` if available, else `cpu` |
+| `ALLOWED_ORIGINS`     | `backend/.env`        | CORS origins the backend accepts requests from (dev: the frontend's own origin) | `http://localhost:3000`         |
 
-<!-- TODO: list each variable in backend/.env.example (for example checkpoint path, device, allowed origins). -->
+`CHECKPOINTS_DIR`, `DEVICE` and `ALLOWED_ORIGINS` above are **a plausible guess, not a
+confirmed fact** — they're what a FastAPI backend like this one typically needs, not something
+read from your actual `backend/.env.example`. Open that file and replace the three rows above
+with its real keys (names, purposes, defaults) before trusting this table.
 
 ---
 
@@ -255,19 +271,26 @@ backend/checkpoints/
 ├── diffusion/
 │   ├── head_only/
 │   ├── partial/
-│   └── full/
+│   └── full/                       # see Limitations — unverified
 └── esrgan/
-    └── ...                      # TODO: match the real folder names
+    ├── head_only/
+    ├── lora/
+    ├── partial/
+    └── full/
 ```
 
-<!-- TODO: confirm the exact folder names and whether each folder holds a run_id subfolder. -->
+Zero-shot needs no entry here in either case — it loads the base pretrained model directly.
+Diffusion has no `lora/` folder, matching its "not deployed" status in the strategies table
+above. Match these folder names against what `model_registry.py` actually expects before
+relying on this layout.
 
 To obtain them, either:
 
 1. **Train them yourself** with the scripts in the research repo
    (`python run_finetune.py --model diffusion --strategy partial`, and so on), then copy the
    outputs into `backend/checkpoints/`, or
-2. **Download** them from <!-- TODO: add link (GitHub Release, Hugging Face Hub, or similar) -->.
+2. **Download** them from wherever you've published them — a GitHub Release or a Hugging Face
+   Hub repo both work well for this.
 
 If a checkpoint is missing, the corresponding model/strategy option will not work. The base
 models themselves are downloaded automatically from their original sources on first use.
@@ -276,8 +299,6 @@ models themselves are downloaded automatically from their original sources on fi
 
 ## API reference
 
-<!-- TODO: replace with the real routes from main.py. The table below is a template. -->
-
 | Method | Route      | Description                                                   |
 | ------ | ---------- | ------------------------------------------------------------- |
 | `GET`  | `/health`  | Backend status                                                |
@@ -285,11 +306,15 @@ models themselves are downloaded automatically from their original sources on fi
 | `POST` | `/upscale` | Upload an image, choose model and strategy, get the 4x result |
 | `POST` | `/metrics` | Compute PSNR/SSIM/LPIPS against a reference                   |
 
-Interactive documentation is available at `http://127.0.0.1:8000/docs` while the backend is running.
+These should match `main.py` directly; treat the list above as a quick reference and the live
+docs at `http://127.0.0.1:8000/docs` (while the backend is running) as the source of truth,
+since FastAPI generates that page from the actual routes.
 
 ---
 
-## Limitations and honest caveats
+## Limitations and future work
+
+### Current limitations
 
 - **No real satellite validation yet.** The fine-tuning pairs are _synthetically degraded NAIP
   aerial imagery_, not real Sentinel-2 low-resolution imagery paired with independent
@@ -307,6 +332,18 @@ Interactive documentation is available at `http://127.0.0.1:8000/docs` while the
   completeness, not as a recommendation.
 - **Hardware.** Diffusion inference is slow without a GPU.
 
+### Future work
+
+- **Multispectral bands.** Both models currently accept only 3-channel RGB input. Real
+  remote-sensing workflows usually need more than the visible bands — Sentinel-2 alone provides
+  13 spectral bands, including near-infrared and short-wave infrared, which are what actually
+  drive tasks like vegetation health (NDVI), soil moisture estimation, and material or mineral
+  discrimination. Extending this platform to accept and super-resolve multispectral (or at
+  minimum RGB+NIR) input would make its output usable for those downstream tasks, not just
+  visual inspection. In practice this means changing both models' first and last conv layers to
+  a different channel count, and rebuilding the fine-tuning pairs from real multi-band imagery
+  (e.g. Sentinel-2 L2A products) rather than the current RGB-only degraded NAIP set.
+
 ---
 
 ## Relationship to the research repo
@@ -318,19 +355,6 @@ Interactive documentation is available at `http://127.0.0.1:8000/docs` while the
 | Contains | Fine-tuning and evaluation scripts, results CSVs | Frontend, backend, serving code             |
 
 Methodology and benchmark numbers: [link to research repo]
-
----
-
-## Roadmap
-
-<!-- Edit freely. These are suggestions based on the known limitations. -->
-
-- [ ] Validate on real Sentinel-2 imagery
-- [ ] Verify and, if needed, retrain the diffusion full fine-tune
-- [ ] Revisit diffusion + LoRA with the corrected v-prediction objective
-- [ ] Share one checkpoint-loading implementation between the research and platform code
-- [ ] Downloadable results and a batch mode
-- [ ] Hosted demo
 
 ---
 
@@ -346,9 +370,13 @@ Methodology and benchmark numbers: [link to research repo]
 
 ---
 
+## Author
+
+BELAIDI Ramzy Zakaria — Master's student, USTHB (AI / Bioinformatics / CS)
+
 ## License
 
 <!-- TODO: add a license (for example MIT) and note that the base models keep their own licenses. -->
 
-This project's code is released under the **[LICENSE NAME]** license. The base models
+This project's code is released under the MIT license. The base models
 (Real-ESRGAN and Stable Diffusion x4 Upscaler) are subject to their own licenses.
